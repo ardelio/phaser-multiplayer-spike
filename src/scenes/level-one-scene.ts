@@ -2,31 +2,20 @@ import Phaser from 'phaser';
 
 import * as ASSETS from '../assets'
 
-const FPS = 60;
-const FIRST_FRAME = 1;
-
 class LevelOneScene extends Phaser.Scene {
-  private platforms: Phaser.Physics.Arcade.StaticGroup;
-  private player: Phaser.Physics.Arcade.Sprite;
   private connectionId: string;
   private enemies: { [connectionId: string]: Phaser.Physics.Arcade.Sprite };
-  private stars: Phaser.Physics.Arcade.Group;
-  private score: number;
-  private scoreText: Phaser.GameObjects.Text;
+  private lastDirectionFacing: string;
   private messagesSent: number;
   private messagesSentText: Phaser.GameObjects.Text;
-  private lastDirectionFacing: string;
-  private frame: number;
-  private websocket: WebSocket;
-  private bombs: Phaser.Physics.Arcade.Group;
+  private platforms: Phaser.Physics.Arcade.StaticGroup;
+  private player: Phaser.Physics.Arcade.Sprite;
 
   constructor() {
     super(LevelOneScene.key());
-    this.score = 0;
-    this.messagesSent = 0;
-    this.frame = FIRST_FRAME;
     this.enemies = {};
     this.lastDirectionFacing = 'turn';
+    this.messagesSent = 0;
   }
 
   static key() {
@@ -34,191 +23,119 @@ class LevelOneScene extends Phaser.Scene {
   }
 
   preload() {
+    window.addEventListener('websocketMessage', this.onWebsocketMessage.bind(this));
 
-    window.addEventListener('websocketMessage', this.onMessage.bind(this));
-
+    this.load.image('sky', ASSETS.SKY);
     this.load.image('ground', ASSETS.GROUND);
     this.load.spritesheet('player', ASSETS.PLAYER, { frameWidth: 32, frameHeight: 48 });
     this.load.spritesheet('enemy', ASSETS.ENEMY, { frameWidth: 32, frameHeight: 48 });
-    this.load.image('star', ASSETS.STAR);
-    this.load.image('sky', ASSETS.SKY);
-    this.load.image('bomb', ASSETS.BOMB);
   }
 
   create() {
-    this.physics.world.setFPS(FPS);
-    this.platforms = this.physics.add.staticGroup()
     this.add.image(400, 300, 'sky');
-    this.scoreText = this.add.text(16, 16, 'Score: 0', { fontSize: '32px', fill: '#000' });
-    this.messagesSentText = this.add.text(250, 16, 'Messages sent: 0', { fontSize: '32px', fill: '#000' });
+    this.messagesSentText = this.add.text(0, 16, 'Messages sent: 0', { fontSize: '32px', fill: '#000' });
+
     this.player = this.physics.add.sprite(100, 450, 'player');
+    this.player.setBounce(0.2);
+    this.player.setCollideWorldBounds(true);
 
-    const { platforms, player } = this;
+    this.platforms = this.physics.add.staticGroup();
+    this.platforms.create(400, 568, 'ground').setScale(2).refreshBody();
+    this.platforms.create(600, 400, 'ground');
+    this.platforms.create(50, 250, 'ground');
+    this.platforms.create(750, 220, 'ground');
 
-    platforms.create(400, 568, 'ground').setScale(2).refreshBody();
-    platforms.create(600, 400, 'ground');
-    platforms.create(50, 250, 'ground');
-    platforms.create(750, 220, 'ground');
+    this.physics.add.collider(this.player, this.platforms);
 
-    player.setBounce(0.2);
-    player.setCollideWorldBounds(true);
+    this.createAnimations('player');
+    this.createAnimations('enemy');
+  }
 
-    this.physics.add.collider(player, platforms);
+  update() {
+    this.handlePlayerMovement();
+  }
 
-    this.stars = this.physics.add.group({
-      key: 'star',
-      repeat: 11,
-      setXY: { x: 12, y: 0, stepX: 70 }
-    });
+  handlePlayerMovement() {
+    const { player } = this;
+    const cursors = this.input.keyboard.createCursorKeys();
 
-    const { stars } = this;
+    if (cursors.left.isDown) {
+      this.sendMovementMessage({ directionFacing: 'left', x: player.x, y: player.y, velocityX: -160 });
+      player.setVelocityX(-160);
+      player.anims.play('player-left', true);
+    } else if (cursors.right.isDown) {
+      this.sendMovementMessage({ directionFacing: 'right', x: player.x, y: player.y, velocityX: 160 });
+      player.setVelocityX(160);
+      player.anims.play('player-right', true);
+    } else {
+      this.sendMovementMessage({ directionFacing: 'turn', x: player.x, y: player.y, velocityX: 0 });
+      player.setVelocityX(0);
+      player.anims.play('player-turn');
+    }
 
-    stars.children.iterate(child => {
-        (child.body as Phaser.Physics.Arcade.Body).setBounceY(Phaser.Math.FloatBetween(0.4, 0.8));
-    });
+    if (cursors.up.isDown && player.body.touching.down) {
+      player.setVelocityY(-330);
+      this.sendMovementMessage({ x: player.x, y: player.y, velocityY: -330 });
+    }
+  }
 
-    this.physics.add.collider(stars, platforms);
-
-    this.physics.add.overlap(player, stars, this.collectStar, null, this);
-
-    this.bombs = this.physics.add.group();
-    this.physics.add.collider(this.bombs, platforms);
-    this.physics.add.collider(player, this.bombs, this.hitBomb, null, this);
-
+  createAnimations(characterKey: string) {
     this.anims.create({
-        key: 'left',
-        frames: this.anims.generateFrameNumbers('player', { start: 0, end: 3 }),
-        frameRate: 10,
-        repeat: -1
-    });
-
-    this.anims.create({
-        key: 'turn',
-        frames: [ { key: 'player', frame: 4 } ],
-        frameRate: 20
-    });
-
-    this.anims.create({
-        key: 'right',
-        frames: this.anims.generateFrameNumbers('player', { start: 5, end: 8 }),
-        frameRate: 10,
-        repeat: -1
-    });
-
-    this.anims.create({
-      key: 'left_enemy',
-      frames: this.anims.generateFrameNumbers('enemy', { start: 0, end: 3 }),
+      key: `${characterKey}-left`,
+      frames: this.anims.generateFrameNumbers(characterKey, { start: 0, end: 3 }),
       frameRate: 10,
       repeat: -1
     });
 
     this.anims.create({
-        key: 'turn_enemy',
-        frames: [ { key: 'enemy', frame: 4 } ],
+        key: `${characterKey}-turn`,
+        frames: [ { key: characterKey, frame: 4 } ],
         frameRate: 20
     });
 
     this.anims.create({
-        key: 'right_enemy',
-        frames: this.anims.generateFrameNumbers('enemy', { start: 5, end: 8 }),
+        key: `${characterKey}-right`,
+        frames: this.anims.generateFrameNumbers(characterKey, { start: 5, end: 8 }),
         frameRate: 10,
         repeat: -1
     });
   }
 
-  update() {
-    this.updateFrame();
-    const { player } = this;
-    const cursors = this.input.keyboard.createCursorKeys();
-
-    if (cursors.left.isDown) {
-      this.sendMessage('left', player.x, player.y, -160);
-      player.setVelocityX(-160);
-      player.anims.play('left', true);
-    } else if (cursors.right.isDown) {
-      this.sendMessage('right', player.x, player.y, 160);
-      player.setVelocityX(160);
-      player.anims.play('right', true);
-    } else {
-      this.sendMessage('turn', player.x, player.y, 0);
-      player.setVelocityX(0);
-      player.anims.play('turn');
-    }
-
-    if (cursors.up.isDown && player.body.touching.down) {
-      player.setVelocityY(-330);
-      this.sendMessage(undefined, player.x, player.y, undefined, -330);
-    }
-  }
-
-  collectStar(player: Phaser.Physics.Arcade.Sprite, star: Phaser.Physics.Arcade.Image) {
-    star.disableBody(true, true);
-
-    this.score += 10;
-    this.scoreText.setText('Score: ' + this.score);
-
-    if (this.stars.countActive(true) === 0)
-    {
-        this.stars.children.iterate((child: Phaser.Physics.Arcade.Image) => {
-            child.enableBody(true, child.x, 0, true, true);
-        });
-
-        const x = (player.x < 400) ? Phaser.Math.Between(400, 800) : Phaser.Math.Between(0, 400);
-
-        var bomb = this.bombs.create(x, 16, 'bomb');
-        bomb.setBounce(1);
-        bomb.setCollideWorldBounds(true);
-        bomb.setVelocity(Phaser.Math.Between(-200, 200), 20);
-    }
-  }
-
-  sendMessage(directionFacing:string, x:number, y: number, velocityX?: number, velocityY?: number) {
-    if (this.lastDirectionFacing === directionFacing) {
+  sendMovementMessage(movementData: IMovementData) {
+    const playerHasNotChangeDirection = this.lastDirectionFacing === movementData.directionFacing;
+    if (playerHasNotChangeDirection) {
       return
     }
-    console.debug('Direction facing (last, next):', this.lastDirectionFacing, directionFacing)
-    if (typeof directionFacing !== 'undefined') {
-      this.lastDirectionFacing = directionFacing;
+
+    console.debug('* Player changed direction');
+
+    if (typeof movementData.directionFacing !== 'undefined') {
+      this.lastDirectionFacing = movementData.directionFacing;
     }
 
-    let data;
-
-    data = { x, y };
-
-    if (typeof directionFacing !== 'undefined') {
-      data = {...data, directionFacing };
-    }
-
-    if (typeof velocityX !== 'undefined') {
-      data = {...data, velocityX }
-    }
-
-    if (typeof velocityY !== 'undefined') {
-      data = {...data, velocityY }
-    }
+    window.websocket.send(JSON.stringify({ action: 'movement', data: movementData }));
 
     this.messagesSent += 1;
     this.messagesSentText.setText('Messages sent: ' + this.messagesSent);
-    window.websocket.send(JSON.stringify({ action: 'movement', data }));
   }
 
-  updateFrame() {
-    const shouldResetFrame = this.frame % FPS === 0;
-    this.frame = shouldResetFrame ? 1 : this.frame + 1;
-  }
-
-  onMessage(event: CustomEvent) {
+  onWebsocketMessage(event: CustomEvent) {
     try {
       const data = JSON.parse(event.detail.data);
-      console.debug('* Received message event:', event.detail);
+
+      console.debug('* Received websocket message:', data);
 
       if (data.action === 'movement') {
-        const { connectionId, directionFacing, x, y, velocityX, velocityY } = data.data;
+        const websocketMovementMessage: IWebsocketMovementMessage = data;
+        const { connectionId, directionFacing, x, y, velocityX, velocityY } = websocketMovementMessage.data;
+
         if ( connectionId === this.connectionId) {
           return
         }
+
         if (typeof this.enemies[connectionId] === 'undefined') {
-          console.log('Adding enemy', x, y)
+          console.log('* Enemy joined the game with Connection ID:', connectionId);
+
           const enemy = this.physics.add.sprite(x, y, 'enemy');
           enemy.setBounce(0.2);
           enemy.setCollideWorldBounds(true);
@@ -239,21 +156,15 @@ class LevelOneScene extends Phaser.Scene {
 
         if (typeof directionFacing !== 'undefined') {
           if(directionFacing === 'left' || directionFacing === 'right') {
-            this.enemies[connectionId].anims.play(`${directionFacing}_enemy`, true);
+            this.enemies[connectionId].anims.play(`enemy-${directionFacing}`, true);
           } else {
-            this.enemies[connectionId].anims.play(`${directionFacing}_enemy`);
+            this.enemies[connectionId].anims.play(`enemy-${directionFacing}`);
           }
         }
       }
     } catch (error) {
       console.error(error);
     }
-  }
-
-  hitBomb (player: Phaser.Physics.Arcade.Sprite, bomb: Phaser.Physics.Arcade.Image) {
-    this.physics.pause();
-    player.setTint(0xff0000);
-    player.anims.play('turn');
   }
 }
 
