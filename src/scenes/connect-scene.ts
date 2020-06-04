@@ -89,7 +89,6 @@ class ConnectScene extends Phaser.Scene {
         if (data.action === 'connection_id') {
           window.connectionId = data.data;
           console.debug('* Received Connection ID:', window.connectionId);
-          window.websocket.send(JSON.stringify({ action: 'join_game' }));
           this.scene.switch(LevelOneScene.key());
         }
       } catch (error) {
