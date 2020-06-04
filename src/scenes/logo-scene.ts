@@ -3,8 +3,6 @@ import Phaser from 'phaser';
 import * as ASSETS from '../assets';
 import { ConnectScene } from '.';
 
-const NEXT_SCENE_DELAY_IN_MILLISECONDS = 3000;
-
 class LogoScene extends Phaser.Scene {
   constructor() {
     super('LogoScene');
@@ -27,8 +25,9 @@ class LogoScene extends Phaser.Scene {
   }
 
   loadNextScene() {
+    const delayInMs = 3000;
     const config: Phaser.Types.Time.TimerEventConfig = {
-      delay: NEXT_SCENE_DELAY_IN_MILLISECONDS,
+      delay: delayInMs,
       callback: () => {
         this.scene.switch(ConnectScene.key());
       },

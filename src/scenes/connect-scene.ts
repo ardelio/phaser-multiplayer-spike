@@ -4,6 +4,7 @@ import { LevelOneScene } from '.';
 class ConnectScene extends Phaser.Scene {
   private startButton: Phaser.GameObjects.Text;
   private connectionString: string;
+  private gameWidth: number;
 
   constructor() {
     super(ConnectScene.key());
@@ -13,7 +14,9 @@ class ConnectScene extends Phaser.Scene {
     return 'ConnectScene';
   }
 
-  preload() {};
+  preload() {
+    this.gameWidth = parseInt(this.game.config.width.toString());
+  }
 
   create() {
     this.addConnectionLabel();
@@ -21,10 +24,8 @@ class ConnectScene extends Phaser.Scene {
     this.addConnectButton();
   };
 
-  update() {};
-
   addConnectionLabel() {
-    const gameWidth = parseInt(this.game.config.width.toString());
+    const { gameWidth } = this;
     const elementWidth = gameWidth - 100;
     const elementHeight = 30;
     const x = (elementWidth / 2) + ((gameWidth - elementWidth) / 2);
@@ -36,7 +37,7 @@ class ConnectScene extends Phaser.Scene {
   }
 
   addConnectionInputText() {
-    const gameWidth = parseInt(this.game.config.width.toString());
+    const { gameWidth } = this;
     const elementWidth = gameWidth - 100;
     const elementHeight = 30;
     const x = (elementWidth / 2) + ((gameWidth - elementWidth) / 2);
@@ -49,7 +50,7 @@ class ConnectScene extends Phaser.Scene {
   }
 
   addConnectButton() {
-    const gameWidth = parseInt(this.game.config.width.toString());
+    const { gameWidth } = this;
     const x = (gameWidth / 2) - 130;
     const y = 400;
     const text = 'Connect and Start Game';
@@ -73,32 +74,37 @@ class ConnectScene extends Phaser.Scene {
     window.websocket = new WebSocket(this.connectionString);
     window.websocket.onopen = () => {
       console.debug('* Connection opened');
-      console.debug('* Retrieving Connection ID'                                           );
+      console.debug('* Retrieving Connection ID');
       window.websocket.send(JSON.stringify({ action: 'connection_id' }));
     };
 
-    window.websocket.onmessage = message => {
-      const websocketMessageEvent = new CustomEvent('websocketMessage', { detail: message });
-      window.dispatchEvent(websocketMessageEvent);
-    }
+    window.websocket.onmessage = this.dispatchWebsocketMessageEvent;
 
-    window.addEventListener('websocketMessage', (event: CustomEvent) => {
-      try {
-        const data = JSON.parse(event.detail.data);
-
-        if (data.action === 'connection_id') {
-          window.connectionId = data.data;
-          console.debug('* Received Connection ID:', window.connectionId);
-          this.scene.switch(LevelOneScene.key());
-        }
-      } catch (error) {
-        console.error(error);
-      }
-    });
+    window.addEventListener('websocketMessage', this.websocketMessageEventListener.bind(this));
   }
 
   updateConnectionString(event: { target: { value: string }}) {
     this.connectionString = event.target.value;
+  }
+
+  dispatchWebsocketMessageEvent(message: MessageEvent) {
+    const websocketMessageEvent = new CustomEvent('websocketMessage', { detail: message });
+    window.dispatchEvent(websocketMessageEvent);
+  }
+
+  websocketMessageEventListener(event: CustomEvent) {
+    try {
+      const websockMessage = JSON.parse(event.detail.data);
+
+      if (websockMessage.action === 'connection_id') {
+        const connectionId = (websockMessage as IWebsocketConnectionIdMessage).data;
+        console.debug('* Received Connection ID:', connectionId);
+        window.connectionId = connectionId;
+        this.scene.switch(LevelOneScene.key());
+      }
+    } catch (error) {
+      console.error(error);
+    }
   }
 }
 

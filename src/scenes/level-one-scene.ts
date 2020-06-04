@@ -1,4 +1,4 @@
-import Phaser, { Physics, GameObjects } from 'phaser';
+import Phaser from 'phaser';
 
 import * as ASSETS from '../assets'
 
@@ -12,9 +12,9 @@ class LevelOneScene extends Phaser.Scene {
   private enemies: { [connectionId: string]: Phaser.Physics.Arcade.Sprite };
   private stars: Phaser.Physics.Arcade.Group;
   private score: number;
-  private scoreText: GameObjects.Text;
+  private scoreText: Phaser.GameObjects.Text;
   private messagesSent: number;
-  private messagesSentText: GameObjects.Text;
+  private messagesSentText: Phaser.GameObjects.Text;
   private lastDirectionFacing: string;
   private frame: number;
   private websocket: WebSocket;
@@ -151,7 +151,7 @@ class LevelOneScene extends Phaser.Scene {
     }
   }
 
-  collectStar(player: Physics.Arcade.Sprite, star: Physics.Arcade.Image) {
+  collectStar(player: Phaser.Physics.Arcade.Sprite, star: Phaser.Physics.Arcade.Image) {
     star.disableBody(true, true);
 
     this.score += 10;
@@ -159,7 +159,7 @@ class LevelOneScene extends Phaser.Scene {
 
     if (this.stars.countActive(true) === 0)
     {
-        this.stars.children.iterate((child: Physics.Arcade.Image) => {
+        this.stars.children.iterate((child: Phaser.Physics.Arcade.Image) => {
             child.enableBody(true, child.x, 0, true, true);
         });
 
@@ -250,7 +250,7 @@ class LevelOneScene extends Phaser.Scene {
     }
   }
 
-  hitBomb (player: Physics.Arcade.Sprite, bomb: Physics.Arcade.Image) {
+  hitBomb (player: Phaser.Physics.Arcade.Sprite, bomb: Phaser.Physics.Arcade.Image) {
     this.physics.pause();
     player.setTint(0xff0000);
     player.anims.play('turn');

@@ -1,7 +1,5 @@
 import Phaser from 'phaser';
 
-require('./globals');
-
 import {
   ConnectScene,
   LogoScene,
