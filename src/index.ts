@@ -2,8 +2,8 @@ import Phaser from 'phaser';
 
 import {
   ConnectScene,
+  GameScene,
   LogoScene,
-  LevelOneScene,
 } from './scenes';
 
 const config : Phaser.Types.Core.GameConfig = {
@@ -21,7 +21,7 @@ const config : Phaser.Types.Core.GameConfig = {
       debug: false,
     },
   },
-  scene: [ LogoScene, ConnectScene, LevelOneScene ],
+  scene: [ LogoScene, ConnectScene, GameScene ],
 };
 
 new Phaser.Game(config);

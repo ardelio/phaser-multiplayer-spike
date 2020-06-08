@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 
 import * as ASSETS from '../assets'
 
-class LevelOneScene extends Phaser.Scene {
+class GameScene extends Phaser.Scene {
   private connectionId: string;
   private enemies: { [connectionId: string]: Phaser.Physics.Arcade.Sprite };
   private lastDirectionFacing: string;
@@ -12,18 +12,19 @@ class LevelOneScene extends Phaser.Scene {
   private player: Phaser.Physics.Arcade.Sprite;
 
   constructor() {
-    super(LevelOneScene.key());
+    super(GameScene.key());
     this.enemies = {};
     this.lastDirectionFacing = 'turn';
     this.messagesSent = 0;
   }
 
   static key() {
-    return 'LevelOneScene';
+    return 'GameScene';
   }
 
   preload() {
-    window.addEventListener('websocketMessage', this.onWebsocketMessage.bind(this));
+    window.addEventListener('gameMessage', this.onGameMessage.bind(this));
+    this.getExistingPlayers();
 
     this.load.image('sky', ASSETS.SKY);
     this.load.image('ground', ASSETS.GROUND);
@@ -101,7 +102,7 @@ class LevelOneScene extends Phaser.Scene {
     });
   }
 
-  sendMovementMessage(movementData: IMovementData) {
+  sendMovementMessage(movementData: Omit<IGameMovementMessage['data'], 'connectionId'>) {
     const playerHasNotChangeDirection = this.lastDirectionFacing === movementData.directionFacing;
     if (playerHasNotChangeDirection) {
       return
@@ -113,38 +114,59 @@ class LevelOneScene extends Phaser.Scene {
       this.lastDirectionFacing = movementData.directionFacing;
     }
 
-    window.websocket.send(JSON.stringify({ action: 'movement', data: movementData }));
+    const data: IGameMovementMessage['data'] = { ...movementData, connectionId: this.connectionId };
+    window.websocket.send(JSON.stringify({ action: 'movement', data }));
 
     this.messagesSent += 1;
     this.messagesSentText.setText('Messages sent: ' + this.messagesSent);
   }
 
-  onWebsocketMessage(event: CustomEvent) {
+  onGameMessage(event: CustomEvent) {
     try {
       const data = JSON.parse(event.detail.data);
 
       console.debug('* Received websocket message:', data);
 
+      if (data.action === 'connected') {
+        const gameConnectedMessage: IGameConnectedMessage = data;
+        const { data: connectionId } = gameConnectedMessage;
+
+        const isWeirdlyThisConnectionId = connectionId === this.connectionId;
+        const alreadyExistsInGame = typeof this.enemies[connectionId] !== 'undefined';
+
+        if (isWeirdlyThisConnectionId || alreadyExistsInGame) {
+          return;
+        }
+
+        this.addEnemy(connectionId);
+      }
+
+      if (data.action === 'current_connections') {
+        const gameCurrentConnectionsMessage: IGameCurrentConnectionsMessage = data;
+        const { data: connectionIds } = gameCurrentConnectionsMessage;
+
+        connectionIds.forEach(connectionId => {
+          const isWeirdlyThisConnectionId = connectionId === this.connectionId;
+          const alreadyExistsInGame = typeof this.enemies[connectionId] !== 'undefined';
+
+          if (isWeirdlyThisConnectionId || alreadyExistsInGame) {
+            return;
+          }
+
+          this.addEnemy(connectionId);
+        });
+      }
+
       if (data.action === 'movement') {
-        const websocketMovementMessage: IWebsocketMovementMessage = data;
-        const { connectionId, directionFacing, x, y, velocityX, velocityY } = websocketMovementMessage.data;
+        const gameMovementMessage: IGameMovementMessage = data;
+        const { connectionId, directionFacing, x, y, velocityX, velocityY } = gameMovementMessage.data;
 
         if ( connectionId === this.connectionId) {
-          return
+          return;
         }
 
-        if (typeof this.enemies[connectionId] === 'undefined') {
-          console.log('* Enemy joined the game with Connection ID:', connectionId);
-
-          const enemy = this.physics.add.sprite(x, y, 'enemy');
-          enemy.setBounce(0.2);
-          enemy.setCollideWorldBounds(true);
-          this.physics.add.collider(enemy, this.platforms);
-          this.enemies[connectionId] = enemy;
-        } else {
-          this.enemies[connectionId].setX(x);
-          this.enemies[connectionId].setY(y);
-        }
+        this.enemies[connectionId].setX(x);
+        this.enemies[connectionId].setY(y);
 
         if (typeof velocityX !== 'undefined') {
           this.enemies[connectionId].setVelocityX(velocityX);
@@ -162,10 +184,39 @@ class LevelOneScene extends Phaser.Scene {
           }
         }
       }
+
+      if (data.action === 'disconnected') {
+        const gameConnectedMessage: IGameDisconnectedMessage = data;
+        const { data: connectionId } = gameConnectedMessage;
+
+        if ( connectionId === this.connectionId) {
+          return;
+        }
+
+        console.log('* Enemy left the game with Connection ID:', connectionId);
+
+        this.enemies[connectionId].destroy();
+        delete this.enemies[connectionId];
+      }
     } catch (error) {
       console.error(error);
     }
   }
+
+  addEnemy(connectionId: string) {
+    console.log('* Enemy joined the game with Connection ID:', connectionId);
+
+    const enemy = this.physics.add.sprite(100, 450, 'enemy');
+    enemy.setBounce(0.2);
+    enemy.setCollideWorldBounds(true);
+    this.physics.add.collider(enemy, this.platforms);
+    this.enemies[connectionId] = enemy;
+  }
+
+  getExistingPlayers() {
+    console.log('* Retrieving existing players.');
+    window.websocket.send(JSON.stringify({ action: 'current_connections' }));
+  }
 }
 
-export default LevelOneScene;
+export default GameScene;
